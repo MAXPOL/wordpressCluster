@@ -22,4 +22,4 @@ firewall-cmd --permanent --zone=public --add-port=80/tcp
 
 reboot
 
-# After full config: cd /var/www/html && tar -cvf wp.tar.gz wp/*
+# After full config: systemctl stop httpd && cd /var/www/html && tar -cvf wp.tar.gz wp/* && systemctl start httpd
