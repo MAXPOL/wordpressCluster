@@ -35,7 +35,7 @@ backend http_back
    server ws1 ip_address_ws1:80 check
    server ws2 ip_address_ws2:80 check
 
-****
+####
 
 firewall-cmd --permanent --zone=public --add-port=80/tcp
 firewall-cmd --reload
