@@ -1,0 +1,8 @@
+FROM ubuntu:18.04
+ENV TZ=Europe/Moscow
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN apt -y update
+RUN apt -y install php php-cli php-fpm php-mysqlnd php-zip php-gd php-mbstring php-curl php-xml php-pear php-bcmath php-json
+RUN apt -y install apache2 nano wget unzip
+RUN cd /var/www/html && wget https://ip_address_1/wp.tar.gz
+RUN cd /var/www/html && tar -xvf wp.tar.gz
