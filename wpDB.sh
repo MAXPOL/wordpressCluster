@@ -16,6 +16,7 @@ systemctl start mysql
 systemctl enable mysql 
 
 mysql_secure_installation <<EOF
+
 y
 1
 1
