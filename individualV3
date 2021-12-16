@@ -1,0 +1,281 @@
+Алгоритм работы
+
+Подключаемся к серверу 1
+
+ssh-keygen -t rsa -b 4096
+ENTER
+ENTER
+ENTER
+
+ssh-copy-id root@ip_address_1
+ssh-copy-id root@ip_address_2
+
+yum install nano wget epel-release -y
+yum install ansible -y
+cd /etc/ansible
+
+nano hosts
+
+[wso]
+
+wso ansible_ssh_hots=192.168.0.103 ansible_ssh_user=root
+
+[wst]
+
+wst ansible_ssh_host=192.168.0.111 ansible_ssh_user=root
+
+###
+
+mkdir ws1
+cd ws1
+
+nano dockerfile
+
+FROM ubuntu:18.04
+ENV TZ=Europe/Moscow
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN apt -y update
+RUN apt -y install php php-cli php-fpm php-mysqlnd php-zip php-gd php-mbstring php-curl php-xml php-pear php-bcmath php-json
+RUN apt -y install apache2 nano wget unzip
+RUN cd /var/www/html && wget https://ru.wordpress.org/latest-ru_RU.zip
+RUN cd /var/www/html && unzip latest-ru_RU.zip
+RUN cd /var/www/html && mv wordpress wp
+RUN cd /var/www/html && chmod 0777 wp
+
+###
+
+nano wsone.sh
+
+yum -y install epel-release
+yum -y install docker nano wget  -y
+
+systemctl start docker
+systemctl enable docker
+
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+setenforce 0
+
+firewall-cmd --permanent --zone=public --add-port=80/tcp
+firewall-cmd --reload
+
+cd /ws
+docker build -t ws .
+docker run -d --name ws -p 80:80 -ti ws /bin/bash
+docker exec ws service apache2 start
+
+###
+
+nano copywp.sh
+
+#!/bin/bash
+
+service apache2 stop
+cd /var/www/html
+tar -cvf wp.tar.gz wp/*
+service apache2 start
+
+###
+
+cd ..
+
+nano ws1.yml
+
+- hosts: wso
+
+  tasks:
+
+    - name: Creates directory WS
+      file:
+        path: /ws
+        state: directory
+
+    - name: Copy file DOCKERFILE
+      ansible.builtin.copy:
+        src: ws1/dockerfile
+        dest: /ws/
+        owner: root
+        group: root
+
+    - name: Copy file WSONE
+      ansible.builtin.copy:
+        src: ws1/wsone.sh
+        dest: /ws/
+        owner: root
+        group: root
+
+    - name: Execute the script
+      command: cd /ws && chmod +x wsone.sh
+
+    - name: Execute the script
+      command: sh /ws/wsone.sh
+
+###
+
+ansible-playbook ws1.yml
+
+НАСТРАИВАЕМ WORDPRESS, вводим в Браузере IP адрес первого сервера: ip_address/wp
+
+nano ws12.yml
+
+- hosts: wso
+
+  tasks:
+
+    - name: Copy file DOCKERFILE
+      ansible.builtin.copy:
+        src: ws1/copywp.sh
+        dest: /ws/
+        owner: root
+        group: root
+
+    - name: Execute the script
+      command: chmod +x /ws/copywp.sh
+
+    - name: docker cp /
+      command: docker cp /ws/copywp.sh ws:/
+
+    - name: docker cp /
+      command: docker exec ws bash -c 'chmod +x /copywp.sh'
+
+    - name: docker exec
+      command: docker exec ws /copywp.sh
+
+###
+
+ansible-playbook ws12.yml
+
+mkdir ws2
+cd ws2
+
+НЕ ЗАБЫВАЕМ ЗАМЕНИТЬ IP на IP своего сервера
+
+nano dockerfile
+
+FROM ubuntu:18.04
+ENV TZ=Europe/Moscow
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN apt -y update
+RUN apt -y install php php-cli php-fpm php-mysqlnd php-zip php-gd php-mbstring php-curl php-xml php-pear php-bcmath php-json
+RUN apt -y install apache2 nano wget unzip
+RUN cd /var/www/html && wget http://192.168.0.103/wp.tar.gz
+RUN cd /var/www/html && tar -xvf wp.tar.gz
+
+###
+
+nano wstwo.sh
+
+yum -y install epel-release
+yum -y install docker nano wget  -y
+
+systemctl start docker
+systemctl enable docker
+
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+setenforce 0
+
+
+firewall-cmd --permanent --zone=public --add-port=80/tcp
+firewall-cmd --reload
+
+cd /ws
+docker build -t ws .
+docker run -d --name ws -p 80:80 -ti ws /bin/bash
+docker exec ws service apache2 start
+
+###
+
+cd ..
+
+nano ws2.yml
+
+- hosts: wst
+
+  tasks:
+
+    - name: Creates directory WS
+      file:
+        path: /ws
+        state: directory
+
+    - name: Copy file DOCKERFILE
+      ansible.builtin.copy:
+        src: ws2/dockerfile
+        dest: /ws/
+        owner: root
+        group: root
+
+    - name: Copy file WSONE
+      ansible.builtin.copy:
+        src: ws2/wstwo.sh
+        dest: /ws/
+        owner: root
+        group: root
+
+    - name: Execute the script
+      command: cd /ws && chmod +x wstwo.sh
+
+    - name: Execute the script
+      command: sh /ws/wstwo.sh
+
+###
+
+ansible-playbook ws2.yml
+
+touch haproxy.sh
+chmod +x haproxy.sh
+
+НЕ ЗАБЫВАЕМ ЗАМЕНИТЬ надпись ip_address1 и ip_address2 на ip адреса ваших сервеов
+
+nano haproxy.sh
+
+#!/bin/bash
+
+yum -y install epel-release
+yum -y install nano wget haproxy ansible -y
+
+cd /etc/haproxy
+
+mv haproxy.cfg haproxy.cfg_backup
+
+touch haproxy.cfg
+
+echo "global" >> haproxy.cfg
+  echo "log /dev/log local0" >> haproxy.cfg
+  echo "log /dev/log local1 notice" >> haproxy.cfg
+  echo "chroot /var/lib/haproxy" >> haproxy.cfg
+   echo "stats timeout 30s" >> haproxy.cfg
+   echo "user haproxy" >> haproxy.cfg
+   echo "group haproxy" >> haproxy.cfg
+   echo "daemon" >> haproxy.cfg
+echo " " >> haproxy.cfg
+echo "defaults" >> haproxy.cfg
+   echo "log global" >> haproxy.cfg
+   echo "mode http" >> haproxy.cfg
+   echo "option httplog" >> haproxy.cfg
+   echo "option dontlognull" >> haproxy.cfg
+   echo "timeout connect 5000" >> haproxy.cfg
+   echo "timeout client 50000" >> haproxy.cfg
+   echo "timeout server 50000" >> haproxy.cfg
+echo " " >> haproxy.cfg
+echo "frontend http_front" >> haproxy.cfg
+   echo "bind *:70" >> haproxy.cfg
+   echo "stats uri /haproxy?stats" >> haproxy.cfg
+   echo "default_backend http_back" >> haproxy.cfg
+echo " " >> haproxy.cfg
+echo "backend http_back" >> haproxy.cfg
+   echo "balance roundrobin" >> haproxy.cfg
+   echo "server ws1 ip_address_ws1:80 check" >> haproxy.cfg
+   echo "server ws2 ip_address_ws2:80 check" >> haproxy.cfg
+
+
+firewall-cmd --permanent --zone=public --add-port=70/tcp
+firewall-cmd --reload
+
+systemctl start haproxy
+systemctl enable haproxy
+
+###
+
+./haproxy.sh
+
+Проверяем работспособность с первого сервера: IP_ADDRESS:70/wp
